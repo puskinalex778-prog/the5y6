@@ -51,6 +51,10 @@ enum class TrackSort(val title: String) {
     TITLE("По названию"), ARTIST("По исполнителю"), ADDED("Сначала новые"), DURATION("По длительности")
 }
 
+enum class FormatFilter(val title: String) {
+    ALL("Все"), MP3("MP3"), WAV("WAV"), SD("SD-карта")
+}
+
 enum class GroupType { ALBUM, ARTIST, FOLDER }
 
 data class TrackGroup(val type: GroupType, val key: String, val title: String, val subtitle: String, val tracks: List<Track>)
@@ -78,6 +82,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     )
     var playerOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
+    var eqOpen by mutableStateOf(false)
     var activeGame by mutableStateOf<Game?>(null)
     var message by mutableStateOf<String?>(null)
 
@@ -87,6 +92,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var scanning by mutableStateOf(false); private set
     var scanStatus by mutableStateOf(""); private set
     var musicTab by mutableStateOf(MusicTab.TRACKS)
+    var formatFilter by mutableStateOf(FormatFilter.ALL)
     var musicQuery by mutableStateOf("")
     var sort by mutableStateOf(TrackSort.TITLE); private set
     var openGroup by mutableStateOf<TrackGroup?>(null)
@@ -102,16 +108,28 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             TrackSort.DURATION -> tracks.sortedByDescending { it.durationMs }
         }
     }
+    val filteredTracks: List<Track> by derivedStateOf {
+        when (formatFilter) {
+            FormatFilter.ALL -> sortedTracks
+            FormatFilter.MP3 -> sortedTracks.filter { it.formatBadge.equals("MP3", ignoreCase = true) }
+            FormatFilter.WAV -> sortedTracks.filter { it.formatBadge.equals("WAV", ignoreCase = true) }
+            FormatFilter.SD -> sortedTracks.filter { it.onSdCard }
+        }
+    }
+    val mp3Count: Int by derivedStateOf { tracks.count { it.formatBadge.equals("MP3", ignoreCase = true) } }
+    val wavCount: Int by derivedStateOf { tracks.count { it.formatBadge.equals("WAV", ignoreCase = true) } }
+    val sdCount: Int by derivedStateOf { tracks.count { it.onSdCard } }
     private val trackById: Map<String, Track> by derivedStateOf { tracks.associateBy { it.id } }
     val favTracks: List<Track> by derivedStateOf {
         val set = favTrackIds.toSet()
-        sortedTracks.filter { it.id in set }
+        filteredTracks.filter { it.id in set }
     }
     val searchResults: List<Track> by derivedStateOf {
         val q = musicQuery.trim().lowercase()
-        if (q.isEmpty()) emptyList() else sortedTracks.filter {
+        if (q.isEmpty()) emptyList() else filteredTracks.filter {
             it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) ||
-                it.album.lowercase().contains(q) || it.folder.lowercase().contains(q)
+                it.album.lowercase().contains(q) || it.folder.lowercase().contains(q) ||
+                it.formatBadge.lowercase().contains(q)
         }
     }
     val albums: List<TrackGroup> by derivedStateOf { buildGroups(GroupType.ALBUM) }
@@ -302,7 +320,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             }
             res.onSuccess { list ->
                 tracks = list
-                if (!silent) message = "Найдено треков: ${list.size}"
+                if (!silent) {
+                    val mp3 = list.count { it.formatBadge.equals("MP3", ignoreCase = true) }
+                    val wav = list.count { it.formatBadge.equals("WAV", ignoreCase = true) }
+                    val sd = list.count { it.onSdCard }
+                    message = "Найдено: ${list.size} (MP3: $mp3 · WAV: $wav · SD: $sd)"
+                }
             }.onFailure { e ->
                 message = "Ошибка сканирования: ${e.message}"
             }
@@ -377,7 +400,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun saveFavTracks() = prefs.edit().putString("favTracks", favTrackIds.joinToString("\n")).apply()
 
     private fun buildGroups(type: GroupType): List<TrackGroup> {
-        val grouped = sortedTracks.groupBy {
+        val grouped = filteredTracks.groupBy {
             when (type) {
                 GroupType.ALBUM -> it.albumName.lowercase()
                 GroupType.ARTIST -> it.artistName.lowercase()
@@ -457,8 +480,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun seekTo(ms: Long) {
-        controller?.seekTo(ms)
-        positionMs = ms
+        val target = ms.coerceIn(0L, durationMs.coerceAtLeast(ms.coerceAtLeast(0L)))
+        controller?.seekTo(target)
+        positionMs = target
+    }
+
+    fun seekRelative(deltaMs: Long) {
+        val c = controller ?: return
+        val maxDur = c.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+        val target = (c.currentPosition + deltaMs).coerceIn(0L, maxDur)
+        c.seekTo(target)
+        positionMs = target
     }
 
     fun toggleShuffle() {
@@ -706,7 +738,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Настройки ----------
     fun onPlaybackSettingsChanged() {
-        AudioFx.settingsHook?.invoke() ?: AudioFx.applyEqualizer()
+        AudioFx.settingsHook?.invoke() ?: AudioFx.syncEqFromSettings()
     }
 
     // ---------- Таймер сна ----------

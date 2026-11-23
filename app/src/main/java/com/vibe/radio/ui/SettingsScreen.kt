@@ -48,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vibe.radio.audio.AudioFx
 import com.vibe.radio.data.AppSettings
 import com.vibe.radio.data.RadioQuality
 import com.vibe.radio.data.Region
@@ -62,7 +61,7 @@ fun SettingsScreen(vm: PlayerViewModel) {
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
     ) {
-        item { ScreenTitle("Настройки", "PLAY pay · версия 2.0") }
+        item { ScreenTitle("Настройки", "PLAY pay · версия 3.0 (3D + 10-полосный EQ)") }
 
         // ---------------- Оформление ----------------
         item { Section("🎨 Оформление") }
@@ -104,7 +103,7 @@ fun SettingsScreen(vm: PlayerViewModel) {
         }
         item {
             Card {
-                SwitchRow("Обложка в плеере", "Иначе — танцующие персонажи. Можно переключать касанием в плеере", AppSettings.showCover) {
+                SwitchRow("Обложка вместо 3D-сцены", "По умолчанию в плеере танцуют 3D-персонажи. Переключатель также есть в плеере", AppSettings.showCover) {
                     AppSettings.update { showCover = it }
                 }
                 SwitchRow("Анимации", "Выключите, чтобы экономить батарею", AppSettings.animations) {
@@ -257,69 +256,8 @@ private fun folderLabel(uri: String): String {
 
 @Composable
 private fun EqualizerCard(vm: PlayerViewModel) {
-    val info = AudioFx.eqInfo
     Card {
-        SwitchRow("Включить эквалайзер", null, AppSettings.eqEnabled) {
-            AppSettings.update { eqEnabled = it }
-            vm.onPlaybackSettingsChanged()
-        }
-        if (info == null) {
-            Text(
-                "Эквалайзер станет доступен после первого запуска воспроизведения (зависит от телефона)",
-                color = Neon.Text2, fontSize = 12.sp,
-            )
-            return@Card
-        }
-        var levels by remember { mutableStateOf(AudioFx.currentLevels()) }
-        if (info.presets.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Text("Пресеты", color = Neon.Text, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Свой", active = AppSettings.eqPreset < 0) {
-                    AppSettings.update { eqPreset = -1 }
-                    vm.onPlaybackSettingsChanged()
-                    levels = AudioFx.currentLevels()
-                }
-                info.presets.forEachIndexed { i, name ->
-                    Chip(name, active = AppSettings.eqPreset == i) {
-                        AppSettings.update { eqPreset = i; eqEnabled = true }
-                        vm.onPlaybackSettingsChanged()
-                        levels = AudioFx.currentLevels()
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        for (b in 0 until info.bands) {
-            val f = info.freqsHz.getOrElse(b) { 0 }
-            val label = if (f >= 1000) "${f / 1000} кГц" else "$f Гц"
-            val v = levels.getOrElse(b) { 0 }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, color = Neon.Text2, fontSize = 12.sp, modifier = Modifier.width(58.dp))
-                Slider(
-                    value = v.toFloat(),
-                    onValueChange = { nv ->
-                        val list = levels.toMutableList()
-                        while (list.size < info.bands) list.add(0)
-                        list[b] = nv.toInt()
-                        levels = list
-                    },
-                    onValueChangeFinished = {
-                        AppSettings.update {
-                            eqPreset = -1
-                            eqEnabled = true
-                            eqBands = levels.joinToString(",")
-                        }
-                        vm.onPlaybackSettingsChanged()
-                    },
-                    valueRange = info.minLevel.toFloat()..info.maxLevel.toFloat(),
-                    colors = sliderColors(),
-                    modifier = Modifier.weight(1f),
-                )
-                Text("${v / 100} дБ", color = Neon.Text2, fontSize = 12.sp, modifier = Modifier.width(44.dp))
-            }
-        }
+        EqualizerPanel(isPlaying = vm.isPlaying)
     }
 }
 

@@ -35,14 +35,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
@@ -137,6 +140,7 @@ fun AppScreen(vm: PlayerViewModel) {
     }
 
     if (vm.queueOpen) QueueSheet(vm)
+    if (vm.eqOpen) EqualizerSheet(vm)
 }
 
 @Composable
@@ -254,6 +258,12 @@ private fun FullPlayer(vm: PlayerViewModel) {
                 if (isMusic) "Сейчас играет" else "Радио в эфире",
                 Modifier.weight(1f), color = Neon.Text2, fontWeight = FontWeight.Medium,
             )
+            IconButton(onClick = { vm.eqOpen = true }) {
+                Icon(
+                    Icons.Rounded.Equalizer, null,
+                    tint = if (AppSettings.eqEnabled) Neon.Cyan else Neon.Text,
+                )
+            }
             if (isMusic) {
                 TextButton(onClick = vm::cycleSpeed) {
                     Text("${trimSpeed(vm.speed)}×", color = if (vm.speed != 1f) Neon.Cyan else Neon.Text)
@@ -274,21 +284,53 @@ private fun FullPlayer(vm: PlayerViewModel) {
             }
         }
 
-        // сцена: обложка или танцор (нажатие переключает)
+        // сцена: 3D-персонажи (крутятся пальцем на 360°) или обложка
         val coverMode = isMusic && AppSettings.showCover
         Box(
             Modifier
                 .fillMaxWidth()
-                .weight(1f)
-                .clickable(enabled = isMusic) { AppSettings.update { showCover = !showCover } },
+                .weight(1f),
             contentAlignment = Alignment.Center,
         ) {
             if (coverMode) {
-                Box(Modifier.padding(28.dp).fillMaxWidth().aspectRatio(1f)) {
+                Box(
+                    Modifier
+                        .padding(28.dp)
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clickable { AppSettings.update { showCover = false } },
+                ) {
                     TrackArtImage(track, 1000.dp, 28.dp)
                 }
             } else {
                 DancerStage(vm.dancer, vm.isPlaying, Modifier.fillMaxSize())
+                Text(
+                    "3D · крути пальцем",
+                    color = Neon.Text2.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 14.dp, top = 6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Neon.Bg.copy(alpha = 0.55f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+            if (isMusic) {
+                Text(
+                    if (coverMode) "🎭 3D" else "🖼️ Обложка",
+                    color = Neon.Text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 14.dp, top = 6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Neon.Bg.copy(alpha = 0.65f))
+                        .border(1.dp, Neon.Line, RoundedCornerShape(50))
+                        .clickable { AppSettings.update { showCover = !showCover } }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
             }
         }
 
@@ -324,7 +366,12 @@ private fun FullPlayer(vm: PlayerViewModel) {
                     modifier = Modifier.basicMarquee(),
                 )
                 val sub = if (station != null) vm.nowPlaying.ifBlank { station.tags.ifBlank { "Прямой эфир" } }
-                else listOfNotNull(track?.artistName, track?.album?.takeIf { it.isNotBlank() && it != "<unknown>" }).joinToString(" · ")
+                else listOfNotNull(
+                    track?.artistName,
+                    track?.album?.takeIf { it.isNotBlank() && it != "<unknown>" },
+                    track?.formatBadge?.takeIf { it.isNotBlank() },
+                    if (track?.onSdCard == true) "SD-карта" else null,
+                ).joinToString(" · ")
                 Text(sub, color = Neon.Text2, maxLines = 1, modifier = Modifier.basicMarquee())
             }
             val fav = if (station != null) vm.isFavorite(station) else track?.let { vm.isFavTrack(it) } == true
@@ -347,27 +394,37 @@ private fun FullPlayer(vm: PlayerViewModel) {
 
         // кнопки
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isMusic) {
                 IconButton(onClick = vm::toggleShuffle) {
-                    Icon(Icons.Rounded.Shuffle, null, tint = if (vm.shuffle) Neon.Cyan else Neon.Text2, modifier = Modifier.size(26.dp))
+                    Icon(Icons.Rounded.Shuffle, null, tint = if (vm.shuffle) Neon.Cyan else Neon.Text2, modifier = Modifier.size(24.dp))
                 }
-            } else Spacer(Modifier.size(48.dp))
-            IconButton(onClick = vm::prev) { Icon(Icons.Rounded.SkipPrevious, null, tint = Neon.Text, modifier = Modifier.size(40.dp)) }
-            PlayButton(vm, 74.dp)
-            IconButton(onClick = vm::next) { Icon(Icons.Rounded.SkipNext, null, tint = Neon.Text, modifier = Modifier.size(40.dp)) }
+            } else Spacer(Modifier.size(44.dp))
+            IconButton(onClick = vm::prev) { Icon(Icons.Rounded.SkipPrevious, null, tint = Neon.Text, modifier = Modifier.size(36.dp)) }
+            if (isMusic) {
+                IconButton(onClick = { vm.seekRelative(-10_000L) }) {
+                    Icon(Icons.Rounded.Replay10, null, tint = Neon.Text2, modifier = Modifier.size(28.dp))
+                }
+            }
+            PlayButton(vm, 72.dp)
+            if (isMusic) {
+                IconButton(onClick = { vm.seekRelative(10_000L) }) {
+                    Icon(Icons.Rounded.Forward10, null, tint = Neon.Text2, modifier = Modifier.size(28.dp))
+                }
+            }
+            IconButton(onClick = vm::next) { Icon(Icons.Rounded.SkipNext, null, tint = Neon.Text, modifier = Modifier.size(36.dp)) }
             if (isMusic) {
                 IconButton(onClick = vm::cycleRepeat) {
                     Icon(
                         if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null,
                         tint = if (vm.repeatMode != Player.REPEAT_MODE_OFF) Neon.Cyan else Neon.Text2,
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
-            } else Spacer(Modifier.size(48.dp))
+            } else Spacer(Modifier.size(44.dp))
         }
 
         Text("Эффекты звука", Modifier.padding(start = 24.dp, bottom = 6.dp), color = Neon.Text2, fontSize = 13.sp)

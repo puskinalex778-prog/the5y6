@@ -20,6 +20,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Vibe"
         android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         android:supportsRtl="true">
 
         <activity

@@ -28,13 +28,13 @@ object AppSettings {
     var customHue by mutableFloatStateOf(285f)
     var themeMode by mutableStateOf(ThemeMode.DARK)
     var animations by mutableStateOf(true)
-    var showCover by mutableStateOf(true)
+    var showCover by mutableStateOf(false) // по умолчанию 3D-сцена с персонажами
     var keepScreenOn by mutableStateOf(false)
 
     // Медиатека
     var scanOnStart by mutableStateOf(true)
-    var minDurationSec by mutableIntStateOf(30)
-    var hideMessengers by mutableStateOf(true)
+    var minDurationSec by mutableIntStateOf(0) // не скрываем короткие MP3/WAV по умолчанию
+    var hideMessengers by mutableStateOf(false)
 
     // Воспроизведение
     var startSection by mutableStateOf(StartSection.MUSIC)
@@ -42,10 +42,12 @@ object AppSettings {
     var skipSilence by mutableStateOf(false)
     var restoreQueue by mutableStateOf(true)
 
-    // Эквалайзер
-    var eqEnabled by mutableStateOf(false)
-    var eqPreset by mutableIntStateOf(-1)
-    var eqBands by mutableStateOf("")
+    // 10-полосный частотный DSP-эквалайзер (31 Гц .. 16 кГц, -12..+12 дБ)
+    var eqEnabled by mutableStateOf(true)
+    var eqPresetId by mutableStateOf("FLAT")
+    var eqBands by mutableStateOf(List(10) { 0f })
+    var eqBassBoost by mutableFloatStateOf(0f) // 0..1
+    var eqPreampDb by mutableFloatStateOf(0f)  // -6..+6 дБ
 
     // Радио
     var radioQuality by mutableStateOf(RadioQuality.AUTO)
@@ -65,18 +67,25 @@ object AppSettings {
         customHue = p.getFloat("hue", 285f)
         themeMode = enumOr(p.getString("theme", null), ThemeMode.DARK)
         animations = p.getBoolean("anim", true)
-        showCover = p.getBoolean("cover", true)
+        showCover = p.getBoolean("cover3d", false)
         keepScreenOn = p.getBoolean("screenOn", false)
         scanOnStart = p.getBoolean("scanOnStart", true)
-        minDurationSec = p.getInt("minDur", 30)
-        hideMessengers = p.getBoolean("hideMsg", true)
+        minDurationSec = p.getInt("minDur2", 0)
+        hideMessengers = p.getBoolean("hideMsg2", false)
         startSection = enumOr(p.getString("start", null), StartSection.MUSIC)
         pauseOnDisconnect = p.getBoolean("noisy", true)
         skipSilence = p.getBoolean("skipSilence", false)
         restoreQueue = p.getBoolean("restore", true)
-        eqEnabled = p.getBoolean("eqOn", false)
-        eqPreset = p.getInt("eqPreset", -1)
-        eqBands = p.getString("eqBands", "") ?: ""
+
+        eqEnabled = p.getBoolean("eqDspOn", true)
+        eqPresetId = p.getString("eqPresetId", "FLAT") ?: "FLAT"
+        val rawBands = (p.getString("eqBands10", "") ?: "")
+            .split(",")
+            .mapNotNull { it.trim().toFloatOrNull()?.coerceIn(-12f, 12f) }
+        eqBands = if (rawBands.size == 10) rawBands else List(10) { 0f }
+        eqBassBoost = p.getFloat("eqBassBoost", 0f).coerceIn(0f, 1f)
+        eqPreampDb = p.getFloat("eqPreampDb", 0f).coerceIn(-6f, 6f)
+
         radioQuality = enumOr(p.getString("quality", null), RadioQuality.AUTO)
         saveDataOnMobile = p.getBoolean("saveData", false)
         autoNextStation = p.getBoolean("autoNext", true)
@@ -101,18 +110,20 @@ object AppSettings {
             .putFloat("hue", customHue)
             .putString("theme", themeMode.name)
             .putBoolean("anim", animations)
-            .putBoolean("cover", showCover)
+            .putBoolean("cover3d", showCover)
             .putBoolean("screenOn", keepScreenOn)
             .putBoolean("scanOnStart", scanOnStart)
-            .putInt("minDur", minDurationSec)
-            .putBoolean("hideMsg", hideMessengers)
+            .putInt("minDur2", minDurationSec)
+            .putBoolean("hideMsg2", hideMessengers)
             .putString("start", startSection.name)
             .putBoolean("noisy", pauseOnDisconnect)
             .putBoolean("skipSilence", skipSilence)
             .putBoolean("restore", restoreQueue)
-            .putBoolean("eqOn", eqEnabled)
-            .putInt("eqPreset", eqPreset)
-            .putString("eqBands", eqBands)
+            .putBoolean("eqDspOn", eqEnabled)
+            .putString("eqPresetId", eqPresetId)
+            .putString("eqBands10", eqBands.joinToString(",") { "%.1f".format(java.util.Locale.US, it) })
+            .putFloat("eqBassBoost", eqBassBoost)
+            .putFloat("eqPreampDb", eqPreampDb)
             .putString("quality", radioQuality.name)
             .putBoolean("saveData", saveDataOnMobile)
             .putBoolean("autoNext", autoNextStation)

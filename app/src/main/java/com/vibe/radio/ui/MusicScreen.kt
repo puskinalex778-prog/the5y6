@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
@@ -107,7 +108,10 @@ fun MusicScreen(vm: PlayerViewModel) {
     var sortMenu by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenTitle("PLAY pay", "Моя музыка · ${countLabel(vm.tracks.size)}") {
+        ScreenTitle("PLAY pay", "Музыка · ${countLabel(vm.tracks.size)} (MP3: ${vm.mp3Count}, WAV: ${vm.wavCount})") {
+            IconButton(onClick = { vm.eqOpen = true }) {
+                Icon(Icons.Rounded.Equalizer, null, tint = if (com.vibe.radio.data.AppSettings.eqEnabled) Neon.Cyan else Neon.Text)
+            }
             Box {
                 IconButton(onClick = { sortMenu = true }) { Icon(Icons.Rounded.Sort, null, tint = Neon.Text) }
                 DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
@@ -123,7 +127,7 @@ fun MusicScreen(vm: PlayerViewModel) {
                 IconButton(onClick = { addMenu = true }) { Icon(Icons.Rounded.Add, null, tint = Neon.Text) }
                 DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text("Сканировать устройство") },
+                        text = { Text("Сканировать MP3/WAV (Телефон + SD)") },
                         leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
                         onClick = { addMenu = false; actions.scan() },
                     )
@@ -133,7 +137,7 @@ fun MusicScreen(vm: PlayerViewModel) {
                         onClick = { addMenu = false; actions.addFolder() },
                     )
                     DropdownMenuItem(
-                        text = { Text("Добавить файлы") },
+                        text = { Text("Добавить файлы (MP3 / WAV / др.)") },
                         leadingIcon = { Icon(Icons.Rounded.AudioFile, null) },
                         onClick = { addMenu = false; actions.addFiles() },
                     )
@@ -141,16 +145,48 @@ fun MusicScreen(vm: PlayerViewModel) {
             }
         }
 
-        SearchField(vm.musicQuery, "Трек, исполнитель, альбом…") { vm.musicQuery = it }
+        SearchField(vm.musicQuery, "Трек, исполнитель, MP3, WAV…") { vm.musicQuery = it }
 
         if (vm.musicQuery.isBlank()) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(vertical = 6.dp),
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
             ) {
                 items(MusicTab.entries.toList()) { t ->
                     Chip(t.title, active = t == vm.musicTab) { vm.musicTab = t }
+                }
+            }
+            if (vm.tracks.isNotEmpty()) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(bottom = 4.dp),
+                ) {
+                    items(FormatFilter.entries.toList()) { f ->
+                        val count = when (f) {
+                            FormatFilter.ALL -> vm.tracks.size
+                            FormatFilter.MP3 -> vm.mp3Count
+                            FormatFilter.WAV -> vm.wavCount
+                            FormatFilter.SD -> vm.sdCount
+                        }
+                        val active = vm.formatFilter == f
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (active) Neon.Cyan.copy(alpha = 0.24f) else Neon.Card)
+                                .border(1.dp, if (active) Neon.Cyan else Neon.Line, RoundedCornerShape(50))
+                                .clickable { vm.formatFilter = f }
+                                .padding(horizontal = 11.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                "${f.title} · $count",
+                                color = if (active) Neon.Cyan else Neon.Text2,
+                                fontSize = 12.sp,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -171,7 +207,9 @@ fun MusicScreen(vm: PlayerViewModel) {
                 vm.tracks.isEmpty() && !vm.scanning && vm.libraryLoaded -> EmptyLibrary(actions)
                 vm.tracks.isEmpty() -> Unit
                 else -> when (vm.musicTab) {
-                    MusicTab.TRACKS -> TrackList(vm, vm.sortedTracks, header = true)
+                    MusicTab.TRACKS ->
+                        if (vm.filteredTracks.isEmpty()) EmptyHint("🎵", "Нет треков по фильтру «${vm.formatFilter.title}»", Modifier.align(Alignment.Center))
+                        else TrackList(vm, vm.filteredTracks, header = true)
                     MusicTab.FAVS ->
                         if (vm.favTracks.isEmpty()) EmptyHint("❤️", "Нажмите ♥ в плеере или ⋮ у трека,\nчтобы добавить в избранное", Modifier.align(Alignment.Center))
                         else TrackList(vm, vm.favTracks, header = true)
@@ -293,7 +331,33 @@ fun TrackRow(vm: PlayerViewModel, t: Track, onClick: () -> Unit) {
                 fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             val dur = if (t.durationMs > 0) " · " + formatTime(t.durationMs) else ""
-            Text(t.artistName + dur, color = Neon.Text2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (t.formatBadge.isNotBlank()) {
+                    Text(
+                        t.formatBadge,
+                        color = if (t.formatBadge == "WAV") Neon.Pink else Neon.Cyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Neon.Line)
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    )
+                }
+                if (t.onSdCard) {
+                    Text(
+                        "SD",
+                        color = Neon.Cyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Neon.Cyan.copy(alpha = 0.18f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    )
+                }
+                Text(t.artistName + dur, color = Neon.Text2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         if (isCurrent && vm.isPlaying) MiniEq(Modifier.padding(horizontal = 6.dp))
         if (vm.isFavTrack(t)) Text("♥", color = Neon.Pink, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 4.dp))

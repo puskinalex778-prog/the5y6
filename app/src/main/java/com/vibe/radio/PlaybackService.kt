@@ -91,8 +91,8 @@ class PlaybackService : MediaSessionService() {
         player.setSkipSilenceEnabled(AppSettings.skipSilence)
         exo = player
 
-        // Системный эквалайзер на аудиосессии плеера
-        AudioFx.attachEqualizer(player.audioSessionId)
+        // 10-полосный DSP-эквалайзер работает напрямую в FxAudioProcessor
+        AudioFx.syncEqFromSettings()
         AudioFx.settingsHook = { applySettings() }
 
         val openApp = PendingIntent.getActivity(
@@ -124,7 +124,7 @@ class PlaybackService : MediaSessionService() {
     private fun applySettings() {
         val p = exo ?: return
         p.setSkipSilenceEnabled(AppSettings.skipSilence)
-        AudioFx.applyEqualizer()
+        AudioFx.syncEqFromSettings()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -137,7 +137,6 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(noisyReceiver) }
         AudioFx.settingsHook = null
-        AudioFx.releaseEqualizer()
         exo = null
         session?.run {
             player.release()
